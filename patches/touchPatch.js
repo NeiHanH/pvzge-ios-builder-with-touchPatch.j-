@@ -23,19 +23,26 @@ let delay_time = 16;
 let lastY = null;
 
 /* ============================================================
- * 新增：单指滑动追踪
- * 用于判断本次触摸是否为「单指拖动」，并在拖动结束后
- * 在手指离开的位置补发一次左键 mousedown + mouseup，
- * 使游戏内植物放置等依赖鼠标点击的操作能够正常触发。
+ * 新增：单指滑动追踪 + 中断保护
  * ============================================================ */
 let singleStartX = 0;
 let singleStartY = 0;
-let singleMoved = false;          // 单指是否发生了滑动
-const SINGLE_MOVE_THRESHOLD = 5;  // 滑动判定阈值（像素）
+let singleMoved = false;
+const SINGLE_MOVE_THRESHOLD = 5;   // 滑动判定阈值（像素）
+const MOUSEUP_DELAY = 60;          // 补发点击时 mouseup 的延迟（毫秒）
+const CLICK_DELAY = 100;           // 松手后延迟多久补发点击（毫秒），期间若再次按下则取消
+let pendingClickTimer = null;      // 待补发点击的定时器
 /* ============================================================ */
 
 document.addEventListener("touchstart", (event) => {
-    /* ---------- 新增：记录单指起点，重置滑动标记 ---------- */
+    /* ---------- 新增：中断保护，取消待补发的点击 ---------- */
+    if (pendingClickTimer) {
+        clearTimeout(pendingClickTimer);
+        pendingClickTimer = null;
+    }
+    /* ------------------------------------------------------ */
+
+    /* ---------- 新增：记录单指起点 ---------- */
     if (event.touches.length === 1) {
         singleStartX = event.touches[0].clientX;
         singleStartY = event.touches[0].clientY;
@@ -44,7 +51,7 @@ document.addEventListener("touchstart", (event) => {
         // 多指操作不参与单指滑动判定
         singleMoved = false;
     }
-    /* ------------------------------------------------------ */
+    /* ---------------------------------------- */
 
     if (event.touches.length === 3) {
         const touch1 = event.touches[0];
@@ -85,7 +92,7 @@ document.addEventListener("touchmove", (event) => {
     if (event.touches.length > 1) {
         singleMoved = false;
     }
-    /* ------------------------------------------ */
+    /* ---------------------------------------- */
 
     if (event.touches.length === 2) {
         const touch1 = event.touches[0];
@@ -122,9 +129,9 @@ document.addEventListener("touchend", (event) => {
     lastY = null;
 
     /* ---------- 新增：保存本次是否为「单指滑动结束」及松手点信息 ---------- */
-    const wasSingleSwipe = singleMoved && event.changedTouches.length === 1;
+    const wasSingleSwipe = singleMoved && event.changedTouches.length === 1 && event.touches.length === 0;
     const endTouch = event.changedTouches[0];
-    const endTarget = endTouch.target;
+    const endTarget = endTouch ? endTouch.target : null;
     /* -------------------------------------------------------------------- */
 
     setTimeout(() => {
@@ -132,13 +139,16 @@ document.addEventListener("touchend", (event) => {
     }, delay_time);
 
     /* ============================================================
-     * 新增：单指滑动结束后，在手指离开的位置补发一次左键点击
-     * 事件流：mousedown → (10ms) → mouseup
-     * 坐标使用手指离开时的 clientX/clientY，
-     * 游戏会自行判断该点位是否存在可交互元素。
+     * 新增：单指滑动结束后，延迟补发一次左键点击
+     * 如果 CLICK_DELAY 内再次触摸，则取消补发（中断保护）
      * ============================================================ */
-    if (wasSingleSwipe && endTouch) {
-        setTimeout(() => {
+    if (wasSingleSwipe && endTouch && endTarget) {
+        if (pendingClickTimer) {
+            clearTimeout(pendingClickTimer);
+        }
+        pendingClickTimer = setTimeout(() => {
+            pendingClickTimer = null;
+
             const md = new MouseEvent("mousedown", {
                 bubbles: true,
                 cancelable: true,
@@ -175,8 +185,8 @@ document.addEventListener("touchend", (event) => {
                     relatedTarget: null
                 });
                 endTarget.dispatchEvent(mu);
-            }, 10);
-        }, delay_time * 2);
+            }, MOUSEUP_DELAY);
+        }, CLICK_DELAY);
     }
     /* ============================================================ */
 
@@ -184,6 +194,21 @@ document.addEventListener("touchend", (event) => {
     singleMoved = false;
     /* ------------------------------------------ */
 
+    event.preventDefault();
+    event.stopPropagation();
+}, true);
+
+/* ============================================================
+ * 新增：touchcancel 处理
+ * 触摸被中断时，取消待补发的点击，并重置单指状态
+ * ============================================================ */
+document.addEventListener("touchcancel", (event) => {
+    lastY = null;
+    if (pendingClickTimer) {
+        clearTimeout(pendingClickTimer);
+        pendingClickTimer = null;
+    }
+    singleMoved = false;
     event.preventDefault();
     event.stopPropagation();
 }, true);
