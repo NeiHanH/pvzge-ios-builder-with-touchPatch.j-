@@ -29,8 +29,8 @@ let singleStartX = 0;
 let singleStartY = 0;
 let singleMoved = false;
 const SINGLE_MOVE_THRESHOLD = 5;   // 滑动判定阈值（像素）
-const MOUSEUP_DELAY = 60;          // 补发点击时 mouseup 的延迟（毫秒）
-const CLICK_DELAY = 100;           // 松手后延迟多久补发点击（毫秒），期间若再次按下则取消
+const MOUSEUP_DELAY = 30;          // 补发点击时 mouseup 的延迟（毫秒）
+const CLICK_DELAY = 50;            // 松手后延迟多久补发点击（毫秒），期间若再次按下则取消
 let pendingClickTimer = null;      // 待补发点击的定时器
 /* ============================================================ */
 
