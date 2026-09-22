@@ -22,13 +22,29 @@ function createEvent(event, type, button) {
 let delay_time = 16;
 let lastY = null;
 
-// 记录本次触摸过程中是否出现过双指/三指，避免多指操作后误触发单指 click
-let wasMultiTouch = false;
+/* ============================================================
+ * 新增：单指滑动追踪
+ * 用于判断本次触摸是否为「单指拖动」，并在拖动结束后
+ * 在手指离开的位置补发一次左键 mousedown + mouseup，
+ * 使游戏内植物放置等依赖鼠标点击的操作能够正常触发。
+ * ============================================================ */
+let singleStartX = 0;
+let singleStartY = 0;
+let singleMoved = false;          // 单指是否发生了滑动
+const SINGLE_MOVE_THRESHOLD = 5;  // 滑动判定阈值（像素）
+/* ============================================================ */
 
 document.addEventListener("touchstart", (event) => {
-    if (event.touches.length >= 2) {
-        wasMultiTouch = true;
+    /* ---------- 新增：记录单指起点，重置滑动标记 ---------- */
+    if (event.touches.length === 1) {
+        singleStartX = event.touches[0].clientX;
+        singleStartY = event.touches[0].clientY;
+        singleMoved = false;
+    } else {
+        // 多指操作不参与单指滑动判定
+        singleMoved = false;
     }
+    /* ------------------------------------------------------ */
 
     if (event.touches.length === 3) {
         const touch1 = event.touches[0];
@@ -57,6 +73,20 @@ document.addEventListener("touchstart", (event) => {
 }, true);
 
 document.addEventListener("touchmove", (event) => {
+    /* ---------- 新增：单指滑动判定 ---------- */
+    if (event.touches.length === 1 && !singleMoved) {
+        const dx = event.touches[0].clientX - singleStartX;
+        const dy = event.touches[0].clientY - singleStartY;
+        if (dx * dx + dy * dy > SINGLE_MOVE_THRESHOLD * SINGLE_MOVE_THRESHOLD) {
+            singleMoved = true;
+        }
+    }
+    // 多指出现时，取消单指滑动状态
+    if (event.touches.length > 1) {
+        singleMoved = false;
+    }
+    /* ------------------------------------------ */
+
     if (event.touches.length === 2) {
         const touch1 = event.touches[0];
         const touch2 = event.touches[1];
@@ -91,19 +121,25 @@ document.addEventListener("touchmove", (event) => {
 document.addEventListener("touchend", (event) => {
     lastY = null;
 
+    /* ---------- 新增：保存本次是否为「单指滑动结束」及松手点信息 ---------- */
+    const wasSingleSwipe = singleMoved && event.changedTouches.length === 1;
     const endTouch = event.changedTouches[0];
+    const endTarget = endTouch.target;
+    /* -------------------------------------------------------------------- */
 
-    // 先派发 mouseup
     setTimeout(() => {
         event.changedTouches[0].target.dispatchEvent(createEvent(event, "mouseup"));
     }, delay_time);
 
-    // 单指触摸结束 → 在松开点派发 click
-    // 拖拽后松手放置植物、点击卡片/草坪放置植物，都依赖这一次 click
-    const isSingleTouchEnd = !wasMultiTouch && event.changedTouches.length === 1;
-    if (isSingleTouchEnd && endTouch) {
+    /* ============================================================
+     * 新增：单指滑动结束后，在手指离开的位置补发一次左键点击
+     * 事件流：mousedown → (10ms) → mouseup
+     * 坐标使用手指离开时的 clientX/clientY，
+     * 游戏会自行判断该点位是否存在可交互元素。
+     * ============================================================ */
+    if (wasSingleSwipe && endTouch) {
         setTimeout(() => {
-            const clickEvent = new MouseEvent("click", {
+            const md = new MouseEvent("mousedown", {
                 bubbles: true,
                 cancelable: true,
                 view: window,
@@ -119,14 +155,34 @@ document.addEventListener("touchend", (event) => {
                 button: 0,
                 relatedTarget: null
             });
-            endTouch.target.dispatchEvent(clickEvent);
+            endTarget.dispatchEvent(md);
+
+            setTimeout(() => {
+                const mu = new MouseEvent("mouseup", {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    detail: 1,
+                    screenX: endTouch.screenX,
+                    screenY: endTouch.screenY,
+                    clientX: endTouch.clientX,
+                    clientY: endTouch.clientY,
+                    ctrlKey: false,
+                    altKey: false,
+                    shiftKey: false,
+                    metaKey: false,
+                    button: 0,
+                    relatedTarget: null
+                });
+                endTarget.dispatchEvent(mu);
+            }, 10);
         }, delay_time * 2);
     }
+    /* ============================================================ */
 
-    // 所有手指离开屏幕后，重置多指标记
-    if (event.touches.length === 0) {
-        wasMultiTouch = false;
-    }
+    /* ---------- 新增：重置单指滑动状态 ---------- */
+    singleMoved = false;
+    /* ------------------------------------------ */
 
     event.preventDefault();
     event.stopPropagation();
