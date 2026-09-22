@@ -22,7 +22,14 @@ function createEvent(event, type, button) {
 let delay_time = 16;
 let lastY = null;
 
+// 记录本次触摸过程中是否出现过双指/三指，避免多指操作后误触发单指 click
+let wasMultiTouch = false;
+
 document.addEventListener("touchstart", (event) => {
+    if (event.touches.length >= 2) {
+        wasMultiTouch = true;
+    }
+
     if (event.touches.length === 3) {
         const touch1 = event.touches[0];
         const touch2 = event.touches[1];
@@ -34,7 +41,7 @@ document.addEventListener("touchstart", (event) => {
             event.changedTouches[0].target.dispatchEvent(createEvent(event, "mouseup", 2));
         }, delay_time * 2);
     }
-    
+
     if (event.touches.length === 2) {
         const touch1 = event.touches[0];
         const touch2 = event.touches[1];
@@ -48,8 +55,8 @@ document.addEventListener("touchstart", (event) => {
     event.preventDefault();
     event.stopPropagation();
 }, true);
-document.addEventListener("touchmove", (event) => {
 
+document.addEventListener("touchmove", (event) => {
     if (event.touches.length === 2) {
         const touch1 = event.touches[0];
         const touch2 = event.touches[1];
@@ -80,12 +87,47 @@ document.addEventListener("touchmove", (event) => {
     event.preventDefault();
     event.stopPropagation();
 }, true);
+
 document.addEventListener("touchend", (event) => {
     lastY = null;
 
+    const endTouch = event.changedTouches[0];
+
+    // 先派发 mouseup
     setTimeout(() => {
         event.changedTouches[0].target.dispatchEvent(createEvent(event, "mouseup"));
     }, delay_time);
+
+    // 单指触摸结束 → 在松开点派发 click
+    // 拖拽后松手放置植物、点击卡片/草坪放置植物，都依赖这一次 click
+    const isSingleTouchEnd = !wasMultiTouch && event.changedTouches.length === 1;
+    if (isSingleTouchEnd && endTouch) {
+        setTimeout(() => {
+            const clickEvent = new MouseEvent("click", {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                detail: 1,
+                screenX: endTouch.screenX,
+                screenY: endTouch.screenY,
+                clientX: endTouch.clientX,
+                clientY: endTouch.clientY,
+                ctrlKey: false,
+                altKey: false,
+                shiftKey: false,
+                metaKey: false,
+                button: 0,
+                relatedTarget: null
+            });
+            endTouch.target.dispatchEvent(clickEvent);
+        }, delay_time * 2);
+    }
+
+    // 所有手指离开屏幕后，重置多指标记
+    if (event.touches.length === 0) {
+        wasMultiTouch = false;
+    }
+
     event.preventDefault();
     event.stopPropagation();
 }, true);
